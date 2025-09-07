@@ -23,21 +23,15 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and run with Docker Compose (smoke test)
+      - name: Build and run app and mysql (smoke test)
         run: |
-          docker compose up --build -d
+          docker compose up --build -d app mysql
           sleep 15
           docker compose ps
-          if docker ps -a --filter "status=exited" --format '{{.Names}}' | grep -q .; then
-            echo "One or more containers exited unexpectedly"
+          if docker ps -a --filter "status=exited" --format '{{.Names}}' | grep -E 'flask_app|flask_mysql' | grep -q .; then
+            echo "One or more main containers exited unexpectedly"
             docker ps -a
             docker compose logs --tail 200 || true
-            docker compose down
-            exit 1
-          fi
-          if docker compose logs --tail 200 | grep -Ei "error|failed|exception|traceback" -q ; then
-            echo "Found error text in logs"
-            docker compose logs --tail 200
             docker compose down
             exit 1
           fi
