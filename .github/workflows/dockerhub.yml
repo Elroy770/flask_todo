@@ -16,7 +16,7 @@ jobs:
         
         # הרצת הבדיקה ושמירת הלוג
         TEST_OUTPUT=$(docker compose run --rm test_client python server_test.py)
-        echo "Test output: $TEST_OUTPUT"
+        echo "Test  output: $TEST_OUTPUT"
         
         # בדיקה אם הלוג הוא 0 (הצלחה) או 1 (כישלון)
         if [ "$TEST_OUTPUT" = "0" ]; then
