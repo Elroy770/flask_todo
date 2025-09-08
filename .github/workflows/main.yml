@@ -9,50 +9,53 @@ on:
 jobs:
   test-and-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    # שלב 1: להריץ בדיקות עם Docker Compose
-    - name: Run Tests
-      run: |
-        docker compose up -d
-        sleep 30
-        
-        # הרצת הבדיקה ושמירת הלוג
-        TEST_OUTPUT=$(docker compose run --rm test python test.py)
-        echo "Test output: $TEST_OUTPUT"
-        
-        if [ "$TEST_OUTPUT" = "0" ]; then
-          echo "✅ SUCCESS: Test passed - output is 0"
-        else
-          echo "❌ FAILED: Test failed - output is $TEST_OUTPUT (expected 0)"
+      # משוך את הקוד מ-GitHub
+      - uses: actions/checkout@v3
+
+      # שלב 1: להריץ בדיקות עם Docker Compose
+      - name: Run Tests
+        run: |
+          docker compose up -d
+          sleep 30
+          
+          TEST_OUTPUT=$(docker compose run --rm test python test.py)
+          echo "Test output: $TEST_OUTPUT"
+          
+          if [ "$TEST_OUTPUT" = "0" ]; then
+            echo "✅ SUCCESS: Test passed - output is 0"
+          else
+            echo "❌ FAILED: Test failed - output is $TEST_OUTPUT"
+            docker compose down
+            exit 1
+          fi
+          
           docker compose down
-          exit 1
-        fi
-        
-        docker compose down
 
-    # שלב 2: פריסה לשרת AWS אם הבדיקות עברו
-    - name: Deploy to AWS
-      if: success()
-      uses: appleboy/ssh-action@v0.1.9
-      with:
-        host: ${{ secrets.AWS_HOST }}
-        username: ${{ secrets.AWS_USER }}
-        key: ${{ secrets.AWS_SSH_KEY }}
-        script: |
-          set -e
-          cd /home/${{ secrets.AWS_USER }}/flask_todo || exit 1
+      # שלב 2: פריסה לשרת AWS אם הבדיקות עברו
+      - name: Deploy to AWS
+        if: success()
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            set -e
+            cd /home/${{ secrets.AWS_USER }}/flask_todo || exit 1
 
-          echo "[1/4] מושך עדכונים מגיט..."
-          git fetch origin main
-          git reset --hard origin/main
+            # תיקון בעיית safe.directory
+            git config --global --add safe.directory /home/${{ secrets.AWS_USER }}/flask_todo
 
-          echo "[2/4] עוצר קונטיינרים קיימים..."
-          docker-compose down || true
+            echo "[1/4] מושך עדכונים מגיט..."
+            git fetch origin main
+            git reset --hard origin/main
 
-          echo "[3/4] בונה ומרים קונטיינרים..."
-          docker-compose up -d --build
+            echo "[2/4] עוצר קונטיינרים קיימים..."
+            docker-compose down || true
 
-          echo "[4/4] בוצע! 🚀"
+            echo "[3/4] בונה ומרים קונטיינרים..."
+            docker-compose up -d --build
+
+            echo "[4/4] ✅ Deployment done!"
