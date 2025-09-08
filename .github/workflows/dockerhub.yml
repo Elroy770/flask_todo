@@ -1,48 +1,52 @@
-name: CI/CD Pipeline
+name: Test and Deploy
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]
 
 jobs:
-  build-test-deploy:
+  test-and-deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and run app and mysql (smoke test)
-        run: |
-          docker compose up --build -d app mysql
-          sleep 15
-          docker compose ps
-          if docker ps -a --filter "status=exited" --format '{{.Names}}' | grep -E 'flask_app|flask_mysql' | grep -q .; then
-            echo "One or more main containers exited unexpectedly"
-            docker ps -a
-            docker compose logs --tail 200 || true
-            docker compose down
-            exit 1
-          fi
+    - uses: actions/checkout@v3
+    
+    - name: Run Test
+      run: |
+        docker compose up -d
+        sleep 30
+        
+        # הרצת הבדיקה ושמירת הלוג
+        TEST_OUTPUT=$(docker compose run --rm test_client python server_test.py)
+        echo "Test output: $TEST_OUTPUT"
+        
+        # בדיקה אם הלוג הוא 0 (הצלחה) או 1 (כישלון)
+        if [ "$TEST_OUTPUT" = "0" ]; then
+          echo "✅ SUCCESS: Test passed - output is 0"
+        else
+          echo "❌ FAILED: Test failed - output is $TEST_OUTPUT (expected 0)"
           docker compose down
-
-      - name: Build images and tag for Docker Hub
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/flask_app:latest -f Dockerfile .
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/tester:latest test/.
-
-      - name: Push images to Docker Hub
-        run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/flask_app:latest
-          docker push ${{ secrets.DOCKER_USERNAME }}/tester:latest
+          exit 1
+        fi
+        
+        docker compose down
+    
+    - name: Login and Push
+      if: success()
+      run: |
+        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+        
+        # יצירת גרסה חדשה - ספירה מחדש מעכשיו
+        BASE_RUN=13  # הrun הנוכחי שממנו מתחילים מחדש
+        NEW_VERSION=$((${{ github.run_number }} - $BASE_RUN + 1))
+        VERSION="0.$NEW_VERSION"
+        echo "Building version: $VERSION (run #${{ github.run_number }})"
+        
+        # בניה ודחיפה עם גרסה ספציפית
+        docker build -t $DOCKER_USERNAME/task-todo-app:$VERSION .
+        docker build -t $DOCKER_USERNAME/task-todo-app:latest .
+        
+        docker push $DOCKER_USERNAME/task-todo-app:$VERSION
+        docker push $DOCKER_USERNAME/task-todo-app:latest
+        
+        echo "✅ DONE - Image uploaded to Docker Hub!"
+        echo "✅ Version: $VERSION"
+        echo "✅ Latest tag also updated"
