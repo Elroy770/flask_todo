@@ -1,5 +1,10 @@
 name: Test and Deploy
 
+env: 
+  DOCKER_USERNAME: elroymalayov
+  DOCKER_PASSWORD: dckr_pat_x0EU5OQgevUFMAn5LFGwmJH7Xg8
+  
+
 on: [push, pull_request]
 
 jobs:
