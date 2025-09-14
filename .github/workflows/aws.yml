@@ -85,11 +85,10 @@ jobs:
             sudo systemctl start docker
             sudo usermod -aG docker $USER
 
-            # Docker Compose plugin
-            DOCKER_COMPOSE_PLUGIN_DIR=/usr/libexec/docker/cli-plugins
-            sudo mkdir -p $DOCKER_COMPOSE_PLUGIN_DIR
-            sudo curl -SL "https://github.com/docker/compose/releases/download/v2.28.2/docker-compose-linux-x86_64" -o $DOCKER_COMPOSE_PLUGIN_DIR/docker-compose
-            sudo chmod +x $DOCKER_COMPOSE_PLUGIN_DIR/docker-compose
+            echo "📦 מתקין Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/download/v2.28.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            echo "✅ Docker Compose הותקן בהצלחה!"
 
             echo "=== Installing done ==="
             docker --version
