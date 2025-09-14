@@ -1,17 +1,21 @@
-name: Test and Deploy
+name: Test, Push and Deploy
 
-on: 
+env:
+  DOCKER_USERNAME: elroymalayov
+  DOCKER_PASSWORD: dckr_pat_x0EU5OQgevUFMAn5LFGwmJH7Xg8
+
+on:
   push:
     branches:
       - main
   pull_request:
 
 jobs:
-  test-and-deploy:
+  test-push-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # משוך את הקוד מ-GitHub
+      # שלב 0: משוך את הקוד מ-GitHub
       - uses: actions/checkout@v3
 
       # שלב 1: להריץ בדיקות עם Docker Compose
@@ -19,10 +23,10 @@ jobs:
         run: |
           docker compose up -d
           sleep 30
-          
+
           TEST_OUTPUT=$(docker compose run --rm test python test.py)
           echo "Test output: $TEST_OUTPUT"
-          
+
           if [ "$TEST_OUTPUT" = "0" ]; then
             echo "✅ SUCCESS: Test passed - output is 0"
           else
@@ -30,10 +34,30 @@ jobs:
             docker compose down
             exit 1
           fi
-          
+
           docker compose down
 
-      # שלב 2: פריסה לשרת AWS אם הבדיקות עברו
+      # שלב 2: Push ל-Docker Hub
+      - name: Login and Push Docker Images
+        if: success()
+        run: |
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+          BASE_RUN=13
+          NEW_VERSION=$((${{ github.run_number }} - $BASE_RUN + 1))
+          VERSION="0.$NEW_VERSION"
+          echo "Building version: $VERSION"
+
+          docker build -t $DOCKER_USERNAME/task-todo-app:$VERSION .
+          docker build -t $DOCKER_USERNAME/task-todo-app:latest .
+
+          docker push $DOCKER_USERNAME/task-todo-app:$VERSION
+          docker push $DOCKER_USERNAME/task-todo-app:latest
+
+          echo "✅ DONE - Image uploaded to Docker Hub!"
+          echo "✅ Version: $VERSION"
+
+      # שלב 3: פריסה ל-AWS דרך SSH
       - name: Deploy to AWS
         if: success()
         uses: appleboy/ssh-action@v0.1.9
@@ -43,19 +67,39 @@ jobs:
           key: ${{ secrets.AWS_SSH_KEY }}
           script: |
             set -e
-            cd /home/${{ secrets.AWS_USER }}/flask_todo || exit 1
 
-            # תיקון בעיית safe.directory
+            # התקנת Docker ו-Docker Compose אם אין
+            if ! command -v docker &> /dev/null; then
+              echo "[Setup] Installing Docker..."
+              curl -fsSL https://get.docker.com -o get-docker.sh
+              sh get-docker.sh
+              sudo usermod -aG docker $USER
+            fi
+
+            if ! command -v docker-compose &> /dev/null; then
+              echo "[Setup] Installing Docker Compose..."
+              sudo curl -L "https://github.com/docker/compose/releases/download/v2.28.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+            fi
+
+            # מעבר לתיקיית הפרויקט
+            mkdir -p /home/${{ secrets.AWS_USER }}/flask_todo
+            cd /home/${{ secrets.AWS_USER }}/flask_todo
+
+            # גיט: pull והתחברות לתיקייה
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/${{ github.repository }} .
+            else
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+
             git config --global --add safe.directory /home/${{ secrets.AWS_USER }}/flask_todo
 
-            echo "[1/4] מושך עדכונים מגיט..."
-            git fetch origin main
-            git reset --hard origin/main
-
-            echo "[2/4] עוצר קונטיינרים קיימים..."
+            # עצירת קונטיינרים קיימים
             docker-compose down -v || true
 
-            echo "[3/4] בונה ומרים קונטיינרים..."
+            # בניה והרמה של קונטיינרים עם הגרסה החדשה
             docker-compose up -d --build
 
-            echo "[4/4] ✅ Deployment done!"
+            echo "✅ Deployment done on AWS!"
