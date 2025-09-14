@@ -85,6 +85,7 @@ jobs:
             sudo systemctl enable docker
             sudo systemctl start docker
             sudo usermod -aG docker $USER
+            newgrp docker
 
             echo "📦 Installing Docker Compose plugin..."
             sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
