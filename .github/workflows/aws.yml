@@ -93,7 +93,7 @@ jobs:
 
             echo "=== Installing done ==="
             docker --version
-            docker compose version
+            docker-compose version
             git --version
 
             echo "=== Pulling project from GitHub ==="
@@ -106,7 +106,7 @@ jobs:
             git config --global --add safe.directory /home/${{ secrets.AWS_USER }}/flask_todo
 
             echo "=== Stopping old containers and starting new ones ==="
-            docker compose down -v || true
-            docker compose up -d --build
+            docker-compose down -v || true
+            docker-compose up -d --build
 
             echo "✅ Deployment done on AWS!"
