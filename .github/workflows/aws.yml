@@ -1,110 +1,54 @@
-name: Test, Push and Deploy
-
-env:
-  DOCKER_USERNAME: elroymalayov
-  DOCKER_PASSWORD: dckr_pat_x0EU5OQgevUFMAn5LFGwmJH7Xg8
+name: Deploy to AWS
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
+    branches: [ "main" ]
 
 jobs:
-  test-push-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # שלב 0: משוך את הקוד מ-GitHub
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      # שלב 1: להריץ בדיקות עם Docker Compose
-      - name: Run Tests
-        run: |
-          docker compose up -d
-          sleep 30
-
-          TEST_OUTPUT=$(docker compose run --rm test python test.py)
-          echo "Test output: $TEST_OUTPUT"
-
-          if [ "$TEST_OUTPUT" = "0" ]; then
-            echo "✅ SUCCESS: Test passed - output is 0"
-          else
-            echo "❌ FAILED: Test failed - output is $TEST_OUTPUT"
-            docker compose down
-            exit 1
-          fi
-
-          docker compose down
-
-      # שלב 2: Push ל-Docker Hub
-      - name: Login and Push Docker Images
-        if: success()
-        run: |
-          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
-          BASE_RUN=13
-          NEW_VERSION=$((${{ github.run_number }} - $BASE_RUN + 1))
-          VERSION="0.$NEW_VERSION"
-          echo "Building version: $VERSION"
-
-          docker build -t $DOCKER_USERNAME/task-todo-app:$VERSION .
-          docker build -t $DOCKER_USERNAME/task-todo-app:latest .
-
-          docker push $DOCKER_USERNAME/task-todo-app:$VERSION
-          docker push $DOCKER_USERNAME/task-todo-app:latest
-
-          echo "✅ DONE - Image uploaded to Docker Hub!"
-          echo "✅ Version: $VERSION"
-
-      # שלב 3: פריסה ל-AWS דרך SSH
-      - name: Deploy to AWS
-        if: success()
+      - name: Deploy over SSH
         uses: appleboy/ssh-action@v0.1.9
         with:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
+          port: 22
           script: |
             set -e
-
             echo "=== Cleaning previous installs ==="
             docker rm -f $(docker ps -aq) 2>/dev/null || true
             docker rmi -f $(docker images -aq) 2>/dev/null || true
-            sudo rm -f /usr/local/bin/docker-compose
-            sudo rm -f /usr/libexec/docker/cli-plugins/docker-compose
             rm -rf ~/flask_todo
 
-
             echo "=== Installing Git, Docker and Docker Compose (Amazon Linux) ==="
-            # Git
-            sudo dnf install -y git
-
-            # Docker (Amazon Linux 2023+ way)
-            sudo dnf install -y docker
+            sudo dnf install -y git docker
             sudo systemctl enable docker
             sudo systemctl start docker
-            sudo usermod -aG docker $USER
-            exec sg docker newgrp `id -gn`
-            
+
+            echo "⚡ Fixing Docker socket permissions"
+            sudo chmod 666 /var/run/docker.sock
+
             echo "📦 Installing Docker Compose plugin..."
             sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             sudo chmod +x /usr/local/bin/docker-compose
-            docker-compose version
 
-            echo "=== Installing done ==="
             docker --version
             docker-compose version
             git --version
 
             echo "=== Pulling project from GitHub ==="
-            mkdir -p /home/${{ secrets.AWS_USER }}/flask_todo
-            cd /home/${{ secrets.AWS_USER }}/flask_todo
-
-            git clone https://github.com/${{ github.repository }} . || true
+            mkdir -p ~/flask_todo
+            cd ~/flask_todo
+            git clone https://github.com/Elroy770/flask_todo . || true
             git fetch origin main
             git reset --hard origin/main
-            git config --global --add safe.directory /home/${{ secrets.AWS_USER }}/flask_todo
+            git config --global --add safe.directory ~/flask_todo
 
             echo "=== Stopping old containers and starting new ones ==="
             docker-compose down -v || true
