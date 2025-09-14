@@ -68,12 +68,13 @@ jobs:
           script: |
             set -e
 
-            # התקנת Docker ו-Docker Compose אם אין
+            # --- התקנת Docker ו-Docker Compose מותאמת ל-Amazon Linux ---
             if ! command -v docker &> /dev/null; then
               echo "[Setup] Installing Docker..."
-              curl -fsSL https://get.docker.com -o get-docker.sh
-              sh get-docker.sh
-              sudo usermod -aG docker $USER
+              sudo amazon-linux-extras enable docker
+              sudo yum install -y docker
+              sudo service docker start
+              sudo usermod -a -G docker $USER
             fi
 
             if ! command -v docker-compose &> /dev/null; then
@@ -82,11 +83,10 @@ jobs:
               sudo chmod +x /usr/local/bin/docker-compose
             fi
 
-            # מעבר לתיקיית הפרויקט
+            # --- מעבר לתיקיית הפרויקט והגדרות Git ---
             mkdir -p /home/${{ secrets.AWS_USER }}/flask_todo
             cd /home/${{ secrets.AWS_USER }}/flask_todo
 
-            # גיט: pull והתחברות לתיקייה
             if [ ! -d ".git" ]; then
               git clone https://github.com/${{ github.repository }} .
             else
@@ -96,10 +96,8 @@ jobs:
 
             git config --global --add safe.directory /home/${{ secrets.AWS_USER }}/flask_todo
 
-            # עצירת קונטיינרים קיימים
+            # --- עצירת קונטיינרים קיימים ובניה מחדש ---
             docker-compose down -v || true
-
-            # בניה והרמה של קונטיינרים עם הגרסה החדשה
             docker-compose up -d --build
 
             echo "✅ Deployment done on AWS!"
