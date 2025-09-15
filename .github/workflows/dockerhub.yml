@@ -1,69 +1,71 @@
-name: Test and Deploy to aws
+name: Test and Deploy to AWS
 
 env: 
   DOCKER_USERNAME: elroymalayov
   DOCKER_PASSWORD: dckr_pat_x0EU5OQgevUFMAn5LFGwmJH7Xg8
-  
 
 on: [push, pull_request]
 
 jobs:
-  test-and-deploy-to-aws:
+  test-and-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Run Test
-      run: |
-        docker compose up -d
-        sleep 15
-        
-        # הרצת הבדיקה ושמירת הלוג
-        TEST_OUTPUT=$(docker compose run --rm test python test.py)
-        echo "Test  output: $TEST_OUTPUT"
-        
-        # בדיקה אם הלוג הוא 0 (הצלחה) או 1 (כישלון)
-        if [ "$TEST_OUTPUT" = "0" ]; then
-          echo "✅ SUCCESS: Test passed - output is 0"
-        else
-          echo "❌ FAILED: Test failed - output is $TEST_OUTPUT (expected 0)"
+      - uses: actions/checkout@v3
+
+      - name: Run Test
+        run: |
+          docker compose up -d
+          sleep 15
+
+          # הרצת הבדיקה ושמירת הלוג
+          TEST_OUTPUT=$(docker compose run --rm test python test.py)
+          echo "Test output: $TEST_OUTPUT"
+
+          # בדיקה אם הלוג הוא 0 (הצלחה) או 1 (כישלון)
+          if [ "$TEST_OUTPUT" = "0" ]; then
+            echo "✅ SUCCESS: Test passed - output is 0"
+          else
+            echo "❌ FAILED: Test failed - output is $TEST_OUTPUT (expected 0)"
+            docker compose down
+            exit 1
+          fi
+
           docker compose down
-          exit 1
-        fi
-        
-        docker compose down
-    
-    - name: Login and Push
-      if: success()
-      run: |
-        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        
-        # יצירת גרסה חדשה - ספירה מחדש מעכשיו
-        BASE_RUN=13  # הrun הנוכחי שממנו מתחילים מחדש
-        NEW_VERSION=$((${{ github.run_number }} - $BASE_RUN + 1))
-        VERSION="0.$NEW_VERSION"
-        echo "Building version: $VERSION (run #${{ github.run_number }})"
-        
-        # בניה ודחיפה עם גרסה ספציפית
-        docker build -t $DOCKER_USERNAME/task-todo-app:$VERSION .
-        docker build -t $DOCKER_USERNAME/task-todo-app:latest .
-        
-        docker push $DOCKER_USERNAME/task-todo-app:$VERSION
-        docker push $DOCKER_USERNAME/task-todo-app:latest
-        
-        echo "✅ DONE - Image uploaded to Docker Hub!"
-        echo "✅ Version: $VERSION"
-        echo "✅ Latest tag also updated"
 
-        name: Deploy to AWS
+      - name: Login and Push Docker Image
+        if: success()
+        run: |
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-    - name: Checkout
-      uses: actions/checkout@v3
+          # יצירת גרסה חדשה - ספירה מחדש מעכשיו
+          BASE_RUN=13
+          NEW_VERSION=$((${{ github.run_number }} - $BASE_RUN + 1))
+          VERSION="0.$NEW_VERSION"
+          echo "Building version: $VERSION (run #${{ github.run_number }})"
 
-    - name: Deploy over SSH
-      uses: appleboy/ssh-action@v0.1.9
-      with:
+          # בניה ודחיפה עם גרסה ספציפית
+          docker build -t $DOCKER_USERNAME/task-todo-app:$VERSION .
+          docker build -t $DOCKER_USERNAME/task-todo-app:latest .
+
+          docker push $DOCKER_USERNAME/task-todo-app:$VERSION
+          docker push $DOCKER_USERNAME/task-todo-app:latest
+
+          echo "✅ DONE - Image uploaded to Docker Hub!"
+          echo "✅ Version: $VERSION"
+          echo "✅ Latest tag also updated"
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test-and-deploy
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v0.1.9
+        with:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
@@ -74,18 +76,23 @@ jobs:
             docker rm -f $(docker ps -aq) 2>/dev/null || true
             docker rmi -f $(docker images -aq) 2>/dev/null || true
             rm -rf ~/flask_todo
+
             echo "=== Installing Git, Docker and Docker Compose (Amazon Linux) ==="
             sudo dnf install -y git docker
             sudo systemctl enable docker
             sudo systemctl start docker
+
             echo "⚡ Fixing Docker socket permissions"
             sudo chmod 666 /var/run/docker.sock
+
             echo "📦 Installing Docker Compose plugin..."
             sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             sudo chmod +x /usr/local/bin/docker-compose
+
             docker --version
             docker-compose version
             git --version
+
             echo "=== Pulling project from GitHub ==="
             mkdir -p ~/flask_todo
             cd ~/flask_todo
@@ -93,7 +100,9 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             git config --global --add safe.directory ~/flask_todo
+
             echo "=== Stopping old containers and starting new ones ==="
             docker-compose down -v || true
             docker-compose up -d --build
+
             echo "✅ Deployment done on AWS!"
