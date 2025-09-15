@@ -91,6 +91,7 @@ jobs:
 
             echo "=== Pulling project from GitHub ==="
             cd ~/flask_todo
+            git init
             git clone https://github.com/Elroy770/flask_todo . || true
             git fetch origin main
             git reset --hard origin/main
