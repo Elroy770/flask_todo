@@ -72,10 +72,6 @@ jobs:
           port: 22
           script: |
             set -e
-            echo "=== Cleaning previous installs ==="
-            docker rm -f $(docker ps -aq) 2>/dev/null || true
-            docker rmi -f $(docker images -aq) 2>/dev/null || true
-            rm -rf ~/flask_todo
 
             echo "=== Installing Git, Docker and Docker Compose (Amazon Linux) ==="
             sudo dnf install -y git docker
@@ -94,7 +90,6 @@ jobs:
             git --version
 
             echo "=== Pulling project from GitHub ==="
-            mkdir -p ~/flask_todo
             cd ~/flask_todo
             git clone https://github.com/Elroy770/flask_todo . || true
             git fetch origin main
